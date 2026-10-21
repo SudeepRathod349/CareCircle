@@ -30,7 +30,7 @@ export default function AlexaAssistant({
   const [isProcessing, setIsProcessing] = useState(false);
   const [confirmedMessage, setConfirmedMessage] = useState(null);
 
-  // Standard benchmark queries for Hackathon judges & users
+  // Standard benchmark queries for users and evaluation
   const DEMO_PRESETS = [
     {
       label: "⭐ Benchmark: Dad's Appointment & Transport to Priya",
@@ -134,12 +134,12 @@ export default function AlexaAssistant({
 
   return (
     <div className="alexa-assistant-view">
-      {/* Required Hackathon Disclaimer */}
+      {/* Simulation Disclaimer */}
       <div className="simulation-banner alexa-theme" role="note">
         <ShieldAlert size={22} style={{ flexShrink: 0, color: "#00d2ff", marginTop: 2 }} />
         <div>
           <strong style={{ color: "#ffffff", display: "block", marginBottom: 2 }}>
-            Amazon Developer Hackathon 2026 • Alexa+ Simulation Notice
+            Alexa+ / Voice Assistant Simulation Notice
           </strong>
           <span>
             This feature is an <strong>interactive local simulation</strong> demonstrating how conversational voice commands can orchestrate family caregiving. All NLP parsing runs 100% locally in your browser. It does not connect to real Alexa devices, Amazon accounts, or commercial cloud APIs.

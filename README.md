@@ -1,6 +1,5 @@
 # CareCircle 💖
 ### Family Caregiving Coordination Web Application
-**Submitted for the Amazon Developer Hackathon 2026**
 
 CareCircle is a family caregiving coordination web application that empowers families to share caregiving responsibilities for aging parents or recovering relatives. It turns complex, fragmented caregiving routines—medication pickups, doctor consultations, physical therapy transport, and nutrition prep—into transparent, synchronized family actions.
 
@@ -55,8 +54,8 @@ CareCircle is a family caregiving coordination web application that empowers fam
 
 ## 🔒 Voice Assistant Simulation Notice
 
-> **IMPORTANT DISCLAIMER FOR HACKATHON EVALUATORS:**  
-> The Alexa+ / Voice Assistant functionality in this web application is an **interactive local simulation** developed specifically for the Amazon Developer Hackathon 2026 demonstration.  
+> **IMPORTANT SIMULATION NOTICE:**  
+> The Alexa+ / Voice Assistant functionality in this web application is an **interactive local simulation** demonstrating voice-driven caregiving workflows:  
 > - It runs **100% locally** using rule-based Natural Language Processing in JavaScript and the browser's built-in Web Speech API.  
 > - It does **not** connect to real Alexa+ hardware, Amazon developer accounts, Alexa Skills Kit cloud endpoints, or external cloud LLM APIs.  
 > - It requires no API keys, no paid subscriptions, and no backend server to run.
@@ -180,4 +179,4 @@ CareCircle/
 ---
 
 ## ⚖️ License
-Built for demonstration purposes for the **Amazon Developer Hackathon 2026**.
+MIT License.

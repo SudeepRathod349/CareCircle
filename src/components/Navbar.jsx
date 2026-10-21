@@ -29,7 +29,6 @@ export default function Navbar({
           <div>
             <div className="brand-title">
               CareCircle
-              <span className="brand-badge">2026 Hackathon Demo</span>
             </div>
             <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontWeight: 500 }}>
               Family Caregiving & Delegation
