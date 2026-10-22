@@ -25,7 +25,8 @@ export default function Dashboard({
   onNavigateTab,
   onOpenCreateTask,
   onOpenCreateAppointment,
-  onToggleTaskComplete
+  onToggleTaskComplete,
+  onOpenHistoryModal
 }) {
   const pendingTasks = tasks.filter((t) => t.status !== "Completed");
   const completedTasks = tasks.filter((t) => t.status === "Completed");
@@ -207,6 +208,20 @@ export default function Dashboard({
 
                     <div className="task-body">
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 2 }}>
+                        <span
+                          style={{
+                            fontFamily: "monospace",
+                            fontSize: "0.72rem",
+                            fontWeight: 800,
+                            backgroundColor: "#f1f5f9",
+                            border: "1px solid #cbd5e1",
+                            color: "#334155",
+                            padding: "1px 5px",
+                            borderRadius: 4
+                          }}
+                        >
+                          {task.id}
+                        </span>
                         <span className="task-title">{task.title}</span>
                         <span className={`badge badge-priority-${task.priority?.toLowerCase()}`}>
                           {task.priority}
@@ -296,9 +311,21 @@ export default function Dashboard({
 
           {/* Activity Log Snapshot */}
           <div className="card">
-            <h3 style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: 12 }}>
-              Recent Care Circle Activity
-            </h3>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h3 style={{ fontSize: "0.95rem", fontWeight: 700, margin: 0 }}>
+                Recent Care Activity
+              </h3>
+              {onOpenHistoryModal && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  style={{ fontSize: "0.75rem", padding: "4px 8px" }}
+                  onClick={onOpenHistoryModal}
+                >
+                  View Full History
+                </button>
+              )}
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {activityLog.slice(0, 4).map((act) => (
                 <div key={act.id} style={{ fontSize: "0.8rem", display: "flex", gap: 8, alignItems: "flex-start" }}>
@@ -307,15 +334,22 @@ export default function Dashboard({
                       width: 8,
                       height: 8,
                       borderRadius: "50%",
-                      backgroundColor: act.type === "assistant" ? "#0284c7" : "var(--primary)",
+                      backgroundColor:
+                        act.actionType === "creation"
+                          ? "#0284c7"
+                          : act.actionType === "completion"
+                          ? "#10b981"
+                          : act.actionType === "update"
+                          ? "#f59e0b"
+                          : "var(--primary)",
                       marginTop: 6,
                       flexShrink: 0
                     }}
                   />
                   <div>
-                    <span style={{ color: "var(--text-main)" }}>{act.text}</span>
+                    <span style={{ color: "var(--text-main)" }}>{act.description || act.text}</span>
                     <div style={{ fontSize: "0.72rem", color: "var(--text-subtle)", marginTop: 2 }}>
-                      {new Date(act.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {new Date(act.timestamp || act.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </div>
                   </div>
                 </div>

@@ -8,33 +8,109 @@ import {
 
 const STORAGE_KEY = "carecircle_data_v1";
 
+// Safe in-memory storage fallback for Node.js test environments
+const memoryStore = {};
+function getStorage() {
+  if (typeof localStorage !== "undefined") {
+    return localStorage;
+  }
+  return {
+    getItem: (key) => memoryStore[key] || null,
+    setItem: (key, val) => {
+      memoryStore[key] = String(val);
+    },
+    removeItem: (key) => {
+      delete memoryStore[key];
+    },
+    clear: () => {
+      Object.keys(memoryStore).forEach((k) => delete memoryStore[k]);
+    }
+  };
+}
+
+/**
+ * Generates a stable, sequential task ID (e.g. TASK-106)
+ * Never alters existing task IDs.
+ */
+export function generateStableTaskId(existingTasks = []) {
+  let maxNum = 100;
+  existingTasks.forEach((t) => {
+    if (t && t.id) {
+      const match = String(t.id).match(/TASK-(\d+)/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    }
+  });
+  return `TASK-${maxNum + 1}`;
+}
+
+/**
+ * Creates an activity history entry
+ */
+export function createActivityEntry({
+  taskId = null,
+  taskTitle = "",
+  actionType = "update", // "creation" | "update" | "completion" | "reopened" | "deletion" | "appointment"
+  actor = "Caregiver",
+  description = "",
+  changes = [] // Array of { field, fieldName, from, to }
+}) {
+  return {
+    id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    taskId,
+    taskTitle,
+    actionType,
+    actor,
+    description: description || `Task ${taskId || ""}: ${actionType}`,
+    changes: changes || [],
+    timestamp: new Date().toISOString()
+  };
+}
+
 /**
  * Returns initial application state
  */
 export function getDefaultData() {
+  const sampleTasks = getSampleTasks();
+  const sampleApts = getSampleAppointments();
+
   return {
     recipient: INITIAL_CARE_RECIPIENT,
     members: INITIAL_MEMBERS,
-    tasks: getSampleTasks(),
-    appointments: getSampleAppointments(),
+    tasks: sampleTasks,
+    appointments: sampleApts,
     activityLog: [
       {
         id: "act-1",
-        text: "Priya created task: Confirm wheelchair transport for cardiology checkup",
-        time: new Date(Date.now() - 3600000 * 4).toISOString(),
-        type: "task"
+        taskId: "TASK-101",
+        taskTitle: "Confirm wheelchair transport for cardiology checkup",
+        actionType: "creation",
+        actor: "Priya (Care Coordinator)",
+        description: "Created task TASK-101: Confirm wheelchair transport for cardiology checkup",
+        changes: [],
+        timestamp: new Date(Date.now() - 3600000 * 24).toISOString()
       },
       {
         id: "act-2",
-        text: "Sarah completed task: Log morning blood pressure & pulse readings",
-        time: new Date(Date.now() - 3600000 * 8).toISOString(),
-        type: "task"
+        taskId: "TASK-103",
+        taskTitle: "Log morning blood pressure & pulse readings",
+        actionType: "completion",
+        actor: "Sarah (Clinical Care)",
+        description: "Marked task TASK-103 as Completed: Log morning blood pressure & pulse readings",
+        changes: [{ field: "status", fieldName: "Status", from: "Pending", to: "Completed" }],
+        timestamp: new Date(Date.now() - 3600000 * 8).toISOString()
       },
       {
         id: "act-3",
-        text: "Cardiology follow-up appointment scheduled for Dad",
-        time: new Date(Date.now() - 3600000 * 24).toISOString(),
-        type: "appointment"
+        taskId: null,
+        taskTitle: "Cardiology Follow-Up & ECG",
+        actionType: "appointment",
+        actor: "Priya (Care Coordinator)",
+        description: "Scheduled cardiology appointment with Dr. Robert Henderson",
+        changes: [],
+        timestamp: new Date(Date.now() - 3600000 * 48).toISOString()
       }
     ],
     lastReset: new Date().toISOString()
@@ -46,7 +122,7 @@ export function getDefaultData() {
  */
 export function loadData() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = getStorage().getItem(STORAGE_KEY);
     if (!raw) {
       const initial = getDefaultData();
       saveData(initial);
@@ -59,7 +135,19 @@ export function loadData() {
       saveData(initial);
       return initial;
     }
-    return parsed;
+
+    // Ensure all tasks have stable IDs (standardize if legacy task-xxx format)
+    const normalizedTasks = parsed.tasks.map((t) => {
+      if (t.id && t.id.startsWith("task-")) {
+        return { ...t, id: t.id.replace("task-", "TASK-") };
+      }
+      return t;
+    });
+
+    return {
+      ...parsed,
+      tasks: normalizedTasks
+    };
   } catch (err) {
     console.error("Failed to read from localStorage:", err);
     return getDefaultData();
@@ -71,7 +159,7 @@ export function loadData() {
  */
 export function saveData(data) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    getStorage().setItem(STORAGE_KEY, JSON.stringify(data));
     return true;
   } catch (err) {
     console.error("Failed to save to localStorage:", err);

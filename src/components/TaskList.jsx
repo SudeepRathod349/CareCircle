@@ -12,7 +12,8 @@ import {
   Trash2,
   Tag,
   AlertTriangle,
-  RotateCcw
+  RotateCcw,
+  History
 } from "lucide-react";
 
 export default function TaskList({
@@ -21,7 +22,8 @@ export default function TaskList({
   onToggleComplete,
   onEditTask,
   onDeleteTask,
-  onOpenCreateModal
+  onOpenCreateModal,
+  onOpenHistoryModal
 }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -109,14 +111,27 @@ export default function TaskList({
             Coordinate responsibilities, track medication runs, and delegate care duties.
           </p>
         </div>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={onOpenCreateModal}
-        >
-          <Plus size={18} />
-          <span>New Task</span>
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          {onOpenHistoryModal && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onOpenHistoryModal}
+              title="View full audit trail of task changes"
+            >
+              <History size={16} />
+              <span>Activity History</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={onOpenCreateModal}
+          >
+            <Plus size={18} />
+            <span>New Task</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter and Search Bar */}
@@ -236,6 +251,22 @@ export default function TaskList({
                 {/* Task Details */}
                 <div className="task-body">
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                    <span
+                      style={{
+                        fontFamily: "monospace",
+                        fontSize: "0.74rem",
+                        fontWeight: 800,
+                        backgroundColor: "#f1f5f9",
+                        border: "1px solid #cbd5e1",
+                        color: "#334155",
+                        padding: "1px 6px",
+                        borderRadius: 4
+                      }}
+                      title={`Permanent Task ID: ${task.id}`}
+                    >
+                      {task.id}
+                    </span>
+
                     <h3 className="task-title">{task.title}</h3>
 
                     {/* Priority Badge */}

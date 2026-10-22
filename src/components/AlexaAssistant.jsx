@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Sparkles,
   Mic,
@@ -15,13 +15,20 @@ import {
   Bell,
   HelpCircle,
   ShieldAlert,
-  ArrowRight
+  ArrowRight,
+  Cpu,
+  RotateCcw,
+  Tag,
+  Check,
+  XCircle
 } from "lucide-react";
-import { parseAssistantRequest } from "../services/nlpParser.js";
+import { parseAssistantRequest, extractProposedChanges } from "../services/nlpParser.js";
 
 export default function AlexaAssistant({
   members = [],
+  existingTasks = [],
   onConfirmItems,
+  onUpdateTask,
   onAddActivity
 }) {
   const [inputText, setInputText] = useState("");
@@ -30,22 +37,36 @@ export default function AlexaAssistant({
   const [isProcessing, setIsProcessing] = useState(false);
   const [confirmedMessage, setConfirmedMessage] = useState(null);
 
-  // Standard benchmark queries for users and evaluation
+  // Conversation context for tracking multi-turn dialogue & follow-ups
+  const [conversationContext, setConversationContext] = useState({
+    lastFocusedTaskId: existingTasks[0]?.id || "TASK-101",
+    pendingDisambiguation: null
+  });
+
+  // Presets demonstrating both creation and contextual modification workflows
   const DEMO_PRESETS = [
     {
       label: "⭐ Benchmark: Dad's Appointment & Transport to Priya",
       text: "Create a reminder for Dad's appointment tomorrow at 5 PM and assign arranging transport to Priya."
     },
     {
-      label: "💊 Medication Refill with High Priority",
-      text: "Remind David to refill Dad's heart medication by Friday at 10 AM with high priority"
+      label: "🔄 Contextual Update: Reschedule David's medication task to 6 PM",
+      text: "Reschedule David's medication task to 6 PM"
     },
     {
-      label: "🏃 Schedule Physical Therapy",
-      text: "Schedule physical therapy session for Dad next Monday at 2 PM"
+      label: "❓ Ambiguous Update: Change Priya's task to High priority",
+      text: "Change Priya's task to High priority"
     },
     {
-      label: "❓ Ambiguous Test (Triggers Clarification)",
+      label: "🗣️ Pronoun Follow-up: Postpone it to tomorrow",
+      text: "Postpone it to tomorrow"
+    },
+    {
+      label: "✓ Status Update: Mark Lisinopril refill as completed",
+      text: "Mark Lisinopril refill as completed"
+    },
+    {
+      label: "❓ Ambiguous Creation: Pick up groceries for Dad",
       text: "Pick up groceries for Dad"
     }
   ];
@@ -73,15 +94,35 @@ export default function AlexaAssistant({
     setIsProcessing(true);
     setConfirmedMessage(null);
 
-    // Simulate natural processing delay (250ms)
     setTimeout(() => {
-      const result = parseAssistantRequest(text, members);
+      const result = parseAssistantRequest(
+        text,
+        members,
+        existingTasks,
+        conversationContext
+      );
       setParseResult(result);
       setIsProcessing(false);
 
-      if (result.status === "ready_to_confirm" && result.alexaVoiceSpeech) {
+      if (result.status === "ready_to_update" && result.targetTask) {
+        setConversationContext((prev) => ({
+          ...prev,
+          lastFocusedTaskId: result.targetTask.id,
+          pendingDisambiguation: null
+        }));
+      } else if (result.status === "disambiguation_needed") {
+        setConversationContext((prev) => ({
+          ...prev,
+          pendingDisambiguation: {
+            candidates: result.candidates,
+            pendingChanges: result.pendingChanges
+          }
+        }));
+      }
+
+      if (result.alexaVoiceSpeech) {
         speakSimulation(result.alexaVoiceSpeech);
-      } else if (result.status === "needs_clarification") {
+      } else if (result.question) {
         speakSimulation(result.question);
       }
     }, 250);
@@ -92,7 +133,8 @@ export default function AlexaAssistant({
     handleProcessInput(presetText);
   }
 
-  function handleConfirm() {
+  // Confirming creation of new appointment and/or task
+  function handleConfirmCreation() {
     if (!parseResult || parseResult.status !== "ready_to_confirm") return;
 
     const appointmentsToAdd = [];
@@ -111,12 +153,13 @@ export default function AlexaAssistant({
       tasks: tasksToAdd
     });
 
-    onAddActivity({
-      id: `act-${Date.now()}`,
-      text: `Alexa+ Simulation parsed & saved: "${parseResult.originalInput}"`,
-      time: new Date().toISOString(),
-      type: "assistant"
-    });
+    if (tasksToAdd.length > 0) {
+      setConversationContext((prev) => ({
+        ...prev,
+        lastFocusedTaskId: tasksToAdd[0].id,
+        pendingDisambiguation: null
+      }));
+    }
 
     const successMsg = `Saved ${appointmentsToAdd.length ? "appointment" : ""} ${
       appointmentsToAdd.length && tasksToAdd.length ? "and" : ""
@@ -128,8 +171,64 @@ export default function AlexaAssistant({
     setInputText("");
   }
 
-  function handleCancelPreview() {
+  // Confirming updates to an existing task
+  function handleConfirmUpdate() {
+    if (!parseResult || parseResult.status !== "ready_to_update" || !parseResult.targetTask) return;
+
+    const { targetTask, changes } = parseResult;
+
+    // Apply the update via parent handler
+    onUpdateTask(targetTask.id, changes, parseResult.summary);
+
+    const changeSummary = changes
+      .map((c) => `${c.fieldName} (${c.originalValue} ➡️ ${c.proposedValue})`)
+      .join(", ");
+
+    const successMsg = `Successfully updated ${targetTask.id} ("${targetTask.title}"): ${changeSummary}`;
+    setConfirmedMessage(successMsg);
+    speakSimulation(`Done! Task ${targetTask.id} has been updated.`);
+
+    setConversationContext((prev) => ({
+      ...prev,
+      lastFocusedTaskId: targetTask.id,
+      pendingDisambiguation: null
+    }));
+
     setParseResult(null);
+    setInputText("");
+  }
+
+  // Cancelling an update without modifying state
+  function handleCancelAction() {
+    setParseResult(null);
+    setConfirmedMessage("Action cancelled. No changes were made to any tasks.");
+    speakSimulation("Action cancelled.");
+  }
+
+  // Choosing a candidate during disambiguation
+  function handleChooseDisambiguationCandidate(candidate) {
+    const pendingChanges = conversationContext.pendingDisambiguation?.pendingChanges || [];
+    const updatedResult = {
+      status: "ready_to_update",
+      engine: "local_demo_heuristic",
+      engineNotice: "Generated by CareCircle Local Heuristic Engine (rule-based pattern matching, no external AI model).",
+      originalInput: parseResult?.originalInput || "",
+      targetTask: candidate,
+      changes: pendingChanges.length > 0 ? pendingChanges : extractProposedChanges(candidate, parseResult?.originalInput || "", members),
+      summary: `Identified ${candidate.id}: "${candidate.title}". Please review the proposed changes before saving.`,
+      alexaVoiceSpeech: `I selected task ${candidate.id}. Please review the proposed changes.`
+    };
+
+    setParseResult(updatedResult);
+    setConversationContext((prev) => ({
+      ...prev,
+      lastFocusedTaskId: candidate.id,
+      pendingDisambiguation: null
+    }));
+
+    if (updatedResult.alexaVoiceSpeech) {
+      speakSimulation(updatedResult.alexaVoiceSpeech);
+    }
   }
 
   return (
@@ -164,7 +263,26 @@ export default function AlexaAssistant({
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            {/* Local Heuristic Indicator */}
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                backgroundColor: "rgba(255, 255, 255, 0.1)",
+                border: "1px solid rgba(255, 255, 255, 0.2)",
+                padding: "4px 10px",
+                borderRadius: "var(--radius-full)",
+                fontSize: "0.75rem",
+                color: "#93c5fd"
+              }}
+              title="Runs offline rule-based heuristic parsing without external cloud models"
+            >
+              <Cpu size={13} color="#00d2ff" />
+              <span>Local Demo Logic</span>
+            </span>
+
             {/* Audio Voice Simulation Toggle */}
             <button
               type="button"
@@ -184,19 +302,15 @@ export default function AlexaAssistant({
               title="Toggle browser speech synthesis voice responses"
             >
               {isVoiceAudioEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
-              <span>{isVoiceAudioEnabled ? "Simulated Voice: ON" : "Simulated Voice: OFF"}</span>
+              <span>{isVoiceAudioEnabled ? "Voice: ON" : "Voice: OFF"}</span>
             </button>
-
-            <span className="alexa-brand-badge">
-              <Mic size={14} /> Alexa+ Simulation Mode
-            </span>
           </div>
         </div>
 
-        {/* Quick Demo Benchmark Chips */}
+        {/* Quick Demo Presets */}
         <div style={{ margin: "16px 0 10px 0" }}>
           <div style={{ fontSize: "0.8rem", color: "#93c5fd", marginBottom: 8, fontWeight: 600 }}>
-            Quick Demo Presets (Click to test):
+            Quick Demo Presets (Creation, Updates, Ambiguity & Follow-ups):
           </div>
           <div className="quick-prompt-chips">
             {DEMO_PRESETS.map((preset, idx) => (
@@ -216,7 +330,7 @@ export default function AlexaAssistant({
         <div className="alexa-input-row">
           <textarea
             className="alexa-textarea"
-            placeholder="Tell CareCircle what you'd like to coordinate... (e.g. 'Create a reminder for Dad\'s appointment tomorrow at 5 PM and assign arranging transport to Priya.')"
+            placeholder="Tell CareCircle what you'd like to coordinate... (e.g. 'Reschedule David\'s medication task to 6 PM' or 'Create a reminder for Dad\'s appointment tomorrow at 5 PM and assign arranging transport to Priya.')"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={(e) => {
@@ -229,9 +343,13 @@ export default function AlexaAssistant({
         </div>
 
         <div className="alexa-action-bar">
-          <span style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
-            Press <strong>Enter</strong> to process or choose a preset above
-          </span>
+          <div style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
+            {conversationContext.lastFocusedTaskId && (
+              <span>
+                Active Context Task: <strong style={{ color: "#00d2ff" }}>{conversationContext.lastFocusedTaskId}</strong>
+              </span>
+            )}
+          </div>
 
           <button
             type="button"
@@ -268,21 +386,348 @@ export default function AlexaAssistant({
           <CheckCircle2 size={24} color="#059669" />
           <div>
             <strong style={{ color: "#065f46", display: "block" }}>
-              Successfully Confirmed & Saved!
+              Action Result
             </strong>
             <span style={{ fontSize: "0.85rem", color: "#047857" }}>
-              {confirmedMessage} You can inspect it right now in the Tasks and Appointments tabs.
+              {confirmedMessage}
             </span>
           </div>
         </div>
       )}
 
-      {/* Clarification Needed State */}
+      {/* Local Demo Logic Indicator Banner for Parse Results */}
+      {parseResult && (
+        <div
+          style={{
+            marginTop: 16,
+            padding: "8px 14px",
+            borderRadius: "var(--radius-md)",
+            backgroundColor: "#f8fafc",
+            border: "1px solid #e2e8f0",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            fontSize: "0.78rem",
+            color: "var(--text-muted)",
+            flexWrap: "wrap",
+            gap: 6
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <Cpu size={14} color="#0284c7" />
+            <strong style={{ color: "var(--text-main)" }}>Local Rule-Based Demo Logic:</strong>
+            <span>Client-side heuristic NLP parser (Offline pattern matching, not a cloud AI model)</span>
+          </div>
+          {parseResult.targetTask && (
+            <span className="badge" style={{ backgroundColor: "#e2e8f0", color: "#334155" }}>
+              Target: {parseResult.targetTask.id}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* No Changes Needed Notice */}
+      {parseResult && parseResult.status === "no_changes_needed" && (
+        <div
+          className="card"
+          style={{
+            marginTop: 16,
+            borderColor: "#bfdbfe",
+            backgroundColor: "#f0f9ff"
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <CheckCircle2 size={20} color="#0284c7" />
+            <div style={{ flex: 1, color: "#0369a1", fontSize: "0.9rem" }}>
+              {parseResult.message}
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={handleCancelAction}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Disambiguation Needed State (Multiple Matches) */}
+      {parseResult && parseResult.status === "disambiguation_needed" && (
+        <div
+          className="card"
+          style={{
+            marginTop: 16,
+            borderColor: "#f59e0b",
+            backgroundColor: "#fffbeb"
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+            <HelpCircle size={26} color="#d97706" style={{ flexShrink: 0, marginTop: 2 }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <span className="badge" style={{ backgroundColor: "#fef3c7", color: "#92400e" }}>
+                  Ambiguity Detected
+                </span>
+                <span style={{ fontSize: "0.78rem", color: "#b45309" }}>
+                  Multiple tasks match your request
+                </span>
+              </div>
+
+              <h3 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#92400e", marginBottom: 6 }}>
+                {parseResult.question}
+              </h3>
+              <p style={{ fontSize: "0.85rem", color: "#78350f", marginBottom: 14 }}>
+                Please select which task you would like to apply this change to:
+              </p>
+
+              {/* Candidate Tasks Choice Cards */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
+                {parseResult.candidates.map((candidate) => (
+                  <div
+                    key={candidate.id}
+                    style={{
+                      border: "1px solid #fcd34d",
+                      borderRadius: "var(--radius-md)",
+                      backgroundColor: "white",
+                      padding: 12,
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                      boxShadow: "var(--shadow-sm)"
+                    }}
+                  >
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                        <span
+                          style={{
+                            fontFamily: "monospace",
+                            fontWeight: 700,
+                            fontSize: "0.8rem",
+                            backgroundColor: "#fef3c7",
+                            color: "#92400e",
+                            padding: "2px 6px",
+                            borderRadius: 4
+                          }}
+                        >
+                          {candidate.id}
+                        </span>
+                        <span className={`badge badge-priority-${candidate.priority?.toLowerCase()}`}>
+                          {candidate.priority}
+                        </span>
+                      </div>
+                      <h4 style={{ fontSize: "0.92rem", fontWeight: 700, color: "var(--text-main)", marginBottom: 4 }}>
+                        {candidate.title}
+                      </h4>
+                      <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                        Assignee: <strong>{candidate.assignee}</strong> • Due: {candidate.dueDate}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      style={{ marginTop: 10, width: "100%", fontSize: "0.8rem" }}
+                      onClick={() => handleChooseDisambiguationCandidate(candidate)}
+                    >
+                      <Check size={14} />
+                      <span>Select {candidate.id}</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ marginTop: 14, textAlign: "right" }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  style={{ backgroundColor: "white" }}
+                  onClick={handleCancelAction}
+                >
+                  Cancel Request
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Review Card for Task Update (Diff: Original Value vs Proposed Value) */}
+      {parseResult && parseResult.status === "ready_to_update" && parseResult.targetTask && (
+        <div
+          className="card"
+          style={{
+            marginTop: 16,
+            borderColor: "#0284c7",
+            boxShadow: "var(--shadow-md)"
+          }}
+        >
+          <div className="card-header" style={{ borderBottom: "1px solid var(--border-light)", paddingBottom: 12 }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <span className="badge" style={{ backgroundColor: "#dbeafe", color: "#1d4ed8" }}>
+                  Task Change Review
+                </span>
+                <span
+                  style={{
+                    fontFamily: "monospace",
+                    fontWeight: 800,
+                    fontSize: "0.85rem",
+                    backgroundColor: "#f1f5f9",
+                    color: "var(--text-main)",
+                    padding: "2px 8px",
+                    borderRadius: 4
+                  }}
+                >
+                  {parseResult.targetTask.id}
+                </span>
+                <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                  (Current Assignee: {parseResult.targetTask.assignee})
+                </span>
+              </div>
+              <h3 style={{ fontSize: "1.15rem", fontWeight: 800, color: "var(--text-main)" }}>
+                {parseResult.targetTask.title}
+              </h3>
+            </div>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={handleCancelAction}
+              >
+                <XCircle size={15} />
+                <span>Cancel / Discard</span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                style={{ backgroundColor: "#0284c7" }}
+                onClick={handleConfirmUpdate}
+              >
+                <Check size={16} />
+                <span>Confirm & Apply Change</span>
+              </button>
+            </div>
+          </div>
+
+          <p style={{ fontSize: "0.88rem", color: "var(--text-muted)", margin: "12px 0 16px 0" }}>
+            {parseResult.summary}
+          </p>
+
+          {/* Diff Box: Original Value vs Proposed Value */}
+          <div style={{ backgroundColor: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "140px 1fr auto 1fr",
+                padding: "8px 14px",
+                backgroundColor: "#f1f5f9",
+                borderBottom: "1px solid #e2e8f0",
+                fontSize: "0.75rem",
+                fontWeight: 700,
+                color: "var(--text-muted)",
+                textTransform: "uppercase"
+              }}
+            >
+              <span>Field</span>
+              <span>Original Value</span>
+              <span style={{ width: 30, textAlign: "center" }}></span>
+              <span>Proposed Value</span>
+            </div>
+
+            {parseResult.changes.map((change, cIdx) => (
+              <div
+                key={cIdx}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "140px 1fr auto 1fr",
+                  padding: "12px 14px",
+                  alignItems: "center",
+                  borderBottom: cIdx < parseResult.changes.length - 1 ? "1px solid #e2e8f0" : "none",
+                  backgroundColor: "white"
+                }}
+              >
+                <strong style={{ fontSize: "0.85rem", color: "var(--text-main)" }}>
+                  {change.fieldName}
+                </strong>
+
+                {/* Original Value */}
+                <div>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      padding: "4px 10px",
+                      borderRadius: "var(--radius-sm)",
+                      backgroundColor: "#fee2e2",
+                      color: "#991b1b",
+                      fontSize: "0.85rem",
+                      fontWeight: 600,
+                      textDecoration: "line-through"
+                    }}
+                  >
+                    {String(change.originalValue)}
+                  </span>
+                </div>
+
+                {/* Arrow */}
+                <div style={{ width: 30, textAlign: "center", color: "var(--text-subtle)" }}>
+                  <ArrowRight size={16} />
+                </div>
+
+                {/* Proposed Value */}
+                <div>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      padding: "4px 10px",
+                      borderRadius: "var(--radius-sm)",
+                      backgroundColor: "#d1fae5",
+                      color: "#065f46",
+                      fontSize: "0.85rem",
+                      fontWeight: 700,
+                      boxShadow: "0 1px 3px rgba(16, 185, 129, 0.2)"
+                    }}
+                  >
+                    {String(change.proposedValue)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16 }}>
+            <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+              Changes will only take effect after you click <strong>Confirm & Apply Change</strong>.
+            </span>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={handleCancelAction}
+              >
+                Discard
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleConfirmUpdate}
+              >
+                <Check size={16} />
+                <span>Confirm & Apply</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clarification Needed State (Creation) */}
       {parseResult && parseResult.status === "needs_clarification" && (
         <div
           className="card"
           style={{
-            marginTop: 20,
+            marginTop: 16,
             borderColor: "#f59e0b",
             backgroundColor: "#fffbeb"
           }}
@@ -327,9 +772,9 @@ export default function AlexaAssistant({
         </div>
       )}
 
-      {/* Ready To Confirm Proposed Actions */}
+      {/* Ready To Confirm Proposed New Items (Creation) */}
       {parseResult && parseResult.status === "ready_to_confirm" && (
-        <div className="card" style={{ marginTop: 20, borderColor: "#0284c7", boxShadow: "var(--shadow-md)" }}>
+        <div className="card" style={{ marginTop: 16, borderColor: "#0284c7", boxShadow: "var(--shadow-md)" }}>
           <div className="card-header" style={{ borderBottom: "1px solid var(--border-light)", paddingBottom: 12 }}>
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -349,14 +794,14 @@ export default function AlexaAssistant({
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
-                onClick={handleCancelPreview}
+                onClick={handleCancelAction}
               >
                 Cancel
               </button>
               <button
                 type="button"
                 className="btn btn-primary btn-sm"
-                onClick={handleConfirm}
+                onClick={handleConfirmCreation}
               >
                 <CheckCircle2 size={16} />
                 <span>Confirm & Add to CareCircle</span>
@@ -440,10 +885,15 @@ export default function AlexaAssistant({
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                      <span className="badge" style={{ backgroundColor: "#059669", color: "white" }}>
-                        <CheckCircle2 size={13} />
-                        Coordinated Care Task
-                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span className="badge" style={{ backgroundColor: "#059669", color: "white" }}>
+                          <CheckCircle2 size={13} />
+                          Coordinated Care Task
+                        </span>
+                        <span style={{ fontFamily: "monospace", fontSize: "0.75rem", fontWeight: 700, backgroundColor: "#d1fae5", color: "#065f46", padding: "1px 6px", borderRadius: 3 }}>
+                          {task.id}
+                        </span>
+                      </div>
                       <span className="badge badge-priority-high">
                         {task.priority} Priority
                       </span>
@@ -483,7 +933,7 @@ export default function AlexaAssistant({
             <button
               type="button"
               className="btn btn-primary"
-              onClick={handleConfirm}
+              onClick={handleConfirmCreation}
             >
               <CheckCircle2 size={18} />
               <span>Confirm & Save All Items to Circle</span>

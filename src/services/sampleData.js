@@ -78,7 +78,7 @@ export function getSampleTasks() {
 
   return [
     {
-      id: "task-101",
+      id: "TASK-101",
       title: "Confirm wheelchair transport for cardiology checkup",
       description: "Call MediRide to verify accessible van pickup for Dad's 5 PM appointment tomorrow.",
       dueDate: tomorrow,
@@ -91,7 +91,7 @@ export function getSampleTasks() {
       updatedAt: new Date(Date.now() - 3600000 * 4).toISOString()
     },
     {
-      id: "task-102",
+      id: "TASK-102",
       title: "Pick up Lisinopril & Calcium supplements refill",
       description: "Pick up 30-day prescription refill from CVS on Main St. Prescription #488219.",
       dueDate: today,
@@ -104,7 +104,7 @@ export function getSampleTasks() {
       updatedAt: new Date(Date.now() - 3600000 * 12).toISOString()
     },
     {
-      id: "task-103",
+      id: "TASK-103",
       title: "Log morning blood pressure & pulse readings",
       description: "Check Dad's resting BP using the Omron monitor before breakfast. Target < 130/80.",
       dueDate: today,
@@ -117,7 +117,7 @@ export function getSampleTasks() {
       updatedAt: new Date(Date.now() - 3600000 * 8).toISOString()
     },
     {
-      id: "task-104",
+      id: "TASK-104",
       title: "Prep low-sodium meal boxes for the weekend",
       description: "Batch cook baked salmon, steamed vegetables, and brown rice portions for Dad's fridge.",
       dueDate: inThreeDays,
@@ -130,7 +130,7 @@ export function getSampleTasks() {
       updatedAt: new Date(Date.now() - 3600000 * 20).toISOString()
     },
     {
-      id: "task-105",
+      id: "TASK-105",
       title: "Setup Amazon Echo Show in Dad's living room",
       description: "Connect to Wi-Fi, test photo sharing, and set up quick one-touch video calls with family.",
       dueDate: dayAfterTomorrow,

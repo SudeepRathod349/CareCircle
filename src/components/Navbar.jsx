@@ -7,7 +7,8 @@ import {
   Users,
   Sparkles,
   RotateCcw,
-  Plus
+  Plus,
+  History
 } from "lucide-react";
 
 export default function Navbar({
@@ -16,7 +17,8 @@ export default function Navbar({
   pendingTaskCount = 0,
   upcomingAptCount = 0,
   onResetDemoClick,
-  onQuickTaskClick
+  onQuickTaskClick,
+  onOpenHistoryClick
 }) {
   return (
     <header className="navbar">
@@ -102,6 +104,16 @@ export default function Navbar({
 
         {/* Action Buttons */}
         <div className="nav-actions">
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={onOpenHistoryClick}
+            title="View complete task activity audit trail"
+          >
+            <History size={14} />
+            <span>History</span>
+          </button>
+
           <button
             type="button"
             className="btn btn-secondary btn-sm"

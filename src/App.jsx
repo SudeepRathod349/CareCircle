@@ -9,7 +9,14 @@ import TaskModal from "./components/TaskModal.jsx";
 import AppointmentModal from "./components/AppointmentModal.jsx";
 import ConfirmDialog from "./components/ConfirmDialog.jsx";
 import NotificationToast from "./components/NotificationToast.jsx";
-import { loadData, saveData, resetData } from "./services/storage.js";
+import ActivityHistoryModal from "./components/ActivityHistoryModal.jsx";
+import {
+  loadData,
+  saveData,
+  resetData,
+  generateStableTaskId,
+  createActivityEntry
+} from "./services/storage.js";
 
 export default function App() {
   // Application Data State with LocalStorage
@@ -25,6 +32,8 @@ export default function App() {
 
   const [isAptModalOpen, setIsAptModalOpen] = useState(false);
   const [aptToEdit, setAptToEdit] = useState(null);
+
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
   // Confirmation Dialog
   const [confirmDialog, setConfirmDialog] = useState({
@@ -55,36 +64,64 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }
 
-  // Activity Log Helper
-  function addActivity(text, type = "task") {
-    const item = {
-      id: `act-${Date.now()}`,
-      text,
-      time: new Date().toISOString(),
-      type
-    };
-    setData((prev) => ({
-      ...prev,
-      activityLog: [item, ...(prev.activityLog || [])].slice(0, 20)
-    }));
-  }
-
   // ===================== TASK HANDLERS =====================
   function handleSaveTask(task) {
     setData((prev) => {
       const exists = prev.tasks.some((t) => t.id === task.id);
       let updatedTasks;
+      let activityItem;
+
       if (exists) {
+        const oldTask = prev.tasks.find((t) => t.id === task.id);
+        const changes = [];
+
+        ["title", "priority", "status", "assignee", "dueDate", "dueTime"].forEach((f) => {
+          if (oldTask && oldTask[f] !== task[f]) {
+            changes.push({
+              field: f,
+              fieldName: f.charAt(0).toUpperCase() + f.slice(1),
+              originalValue: oldTask[f],
+              proposedValue: task[f]
+            });
+          }
+        });
+
         updatedTasks = prev.tasks.map((t) => (t.id === task.id ? task : t));
-        showToast(`Updated task: "${task.title}"`);
-        addActivity(`Updated task: "${task.title}"`, "task");
+        showToast(`Updated task ${task.id}: "${task.title}"`);
+
+        activityItem = createActivityEntry({
+          taskId: task.id,
+          taskTitle: task.title,
+          actionType: "update",
+          actor: "Manual User Action",
+          description: `Updated task ${task.id} ("${task.title}")`,
+          changes
+        });
       } else {
-        updatedTasks = [task, ...prev.tasks];
-        showToast(`Created task: "${task.title}"`);
-        addActivity(`Created task: "${task.title}"`, "task");
+        // Ensure new task has a stable ID
+        const stableId = task.id || generateStableTaskId(prev.tasks);
+        const finalTask = { ...task, id: stableId };
+
+        updatedTasks = [finalTask, ...prev.tasks];
+        showToast(`Created task ${stableId}: "${task.title}"`);
+
+        activityItem = createActivityEntry({
+          taskId: stableId,
+          taskTitle: task.title,
+          actionType: "creation",
+          actor: "Manual User Action",
+          description: `Created new task ${stableId}: "${task.title}" (assigned to ${task.assignee})`,
+          changes: []
+        });
       }
-      return { ...prev, tasks: updatedTasks };
+
+      return {
+        ...prev,
+        tasks: updatedTasks,
+        activityLog: [activityItem, ...(prev.activityLog || [])].slice(0, 50)
+      };
     });
+
     setIsTaskModalOpen(false);
     setTaskToEdit(null);
   }
@@ -99,14 +136,27 @@ export default function App() {
         t.id === taskId ? { ...t, status: nextStatus, updatedAt: new Date().toISOString() } : t
       );
 
-      const msg =
-        nextStatus === "Completed"
-          ? `Completed task: "${task.title}"`
-          : `Re-opened task: "${task.title}"`;
-      showToast(msg, nextStatus === "Completed" ? "success" : "info");
-      addActivity(msg, "task");
+      const isCompleted = nextStatus === "Completed";
+      const msg = isCompleted
+        ? `Completed task ${task.id}: "${task.title}"`
+        : `Re-opened task ${task.id}: "${task.title}"`;
 
-      return { ...prev, tasks: updated };
+      showToast(msg, isCompleted ? "success" : "info");
+
+      const activityItem = createActivityEntry({
+        taskId: task.id,
+        taskTitle: task.title,
+        actionType: isCompleted ? "completion" : "reopened",
+        actor: "Caregiver (Checkbox)",
+        description: msg,
+        changes: [{ field: "status", fieldName: "Status", originalValue: task.status, proposedValue: nextStatus }]
+      });
+
+      return {
+        ...prev,
+        tasks: updated,
+        activityLog: [activityItem, ...(prev.activityLog || [])].slice(0, 50)
+      };
     });
   }
 
@@ -114,18 +164,68 @@ export default function App() {
     setConfirmDialog({
       isOpen: true,
       title: "Delete Care Task?",
-      message: `Are you sure you want to delete "${taskTitle}"? This cannot be undone.`,
+      message: `Are you sure you want to delete ${taskId} ("${taskTitle}")? This cannot be undone.`,
       confirmText: "Delete Task",
       isDanger: true,
       onConfirm: () => {
-        setData((prev) => ({
-          ...prev,
-          tasks: prev.tasks.filter((t) => t.id !== taskId)
-        }));
+        setData((prev) => {
+          const activityItem = createActivityEntry({
+            taskId,
+            taskTitle,
+            actionType: "deletion",
+            actor: "Caregiver",
+            description: `Deleted task ${taskId}: "${taskTitle}"`,
+            changes: []
+          });
+
+          return {
+            ...prev,
+            tasks: prev.tasks.filter((t) => t.id !== taskId),
+            activityLog: [activityItem, ...(prev.activityLog || [])].slice(0, 50)
+          };
+        });
+
         setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
         showToast(`Deleted task: "${taskTitle}"`, "info");
-        addActivity(`Deleted task: "${taskTitle}"`, "task");
       }
+    });
+  }
+
+  // ===================== ASSISTANT UPDATE CONFIRMATION HANDLER =====================
+  function handleUpdateTaskFromAssistant(taskId, changes = [], description = "") {
+    setData((prev) => {
+      const task = prev.tasks.find((t) => t.id === taskId);
+      if (!task) return prev;
+
+      const patch = {};
+      changes.forEach((c) => {
+        patch[c.field] = c.proposedValue;
+      });
+
+      const updatedTask = {
+        ...task,
+        ...patch,
+        updatedAt: new Date().toISOString()
+      };
+
+      const updatedTasks = prev.tasks.map((t) => (t.id === taskId ? updatedTask : t));
+
+      const activityItem = createActivityEntry({
+        taskId,
+        taskTitle: task.title,
+        actionType: "update",
+        actor: "Alexa+ Simulation (Local Heuristic)",
+        description: description || `Updated task ${taskId} via assistant`,
+        changes
+      });
+
+      showToast(`Updated ${taskId}: "${task.title}"`, "success");
+
+      return {
+        ...prev,
+        tasks: updatedTasks,
+        activityLog: [activityItem, ...(prev.activityLog || [])].slice(0, 50)
+      };
     });
   }
 
@@ -134,17 +234,39 @@ export default function App() {
     setData((prev) => {
       const exists = prev.appointments.some((a) => a.id === apt.id);
       let updatedApts;
+      let activityItem;
+
       if (exists) {
         updatedApts = prev.appointments.map((a) => (a.id === apt.id ? apt : a));
         showToast(`Updated appointment: "${apt.title}"`);
-        addActivity(`Updated appointment: "${apt.title}"`, "appointment");
+        activityItem = createActivityEntry({
+          taskId: null,
+          taskTitle: apt.title,
+          actionType: "appointment",
+          actor: "Caregiver",
+          description: `Updated medical appointment: "${apt.title}" on ${apt.date}`,
+          changes: []
+        });
       } else {
         updatedApts = [apt, ...prev.appointments];
         showToast(`Scheduled appointment: "${apt.title}"`);
-        addActivity(`Scheduled appointment: "${apt.title}"`, "appointment");
+        activityItem = createActivityEntry({
+          taskId: null,
+          taskTitle: apt.title,
+          actionType: "appointment",
+          actor: "Caregiver",
+          description: `Scheduled appointment: "${apt.title}" with ${apt.doctor || "Doctor"} on ${apt.date}`,
+          changes: []
+        });
       }
-      return { ...prev, appointments: updatedApts };
+
+      return {
+        ...prev,
+        appointments: updatedApts,
+        activityLog: [activityItem, ...(prev.activityLog || [])].slice(0, 50)
+      };
     });
+
     setIsAptModalOpen(false);
     setAptToEdit(null);
   }
@@ -157,26 +279,68 @@ export default function App() {
       confirmText: "Delete Appointment",
       isDanger: true,
       onConfirm: () => {
-        setData((prev) => ({
-          ...prev,
-          appointments: prev.appointments.filter((a) => a.id !== aptId)
-        }));
+        setData((prev) => {
+          const activityItem = createActivityEntry({
+            taskId: null,
+            taskTitle: aptTitle,
+            actionType: "appointment",
+            actor: "Caregiver",
+            description: `Cancelled appointment: "${aptTitle}"`,
+            changes: []
+          });
+
+          return {
+            ...prev,
+            appointments: prev.appointments.filter((a) => a.id !== aptId),
+            activityLog: [activityItem, ...(prev.activityLog || [])].slice(0, 50)
+          };
+        });
+
         setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
         showToast(`Deleted appointment: "${aptTitle}"`, "info");
-        addActivity(`Deleted appointment: "${aptTitle}"`, "appointment");
       }
     });
   }
 
-  // ===================== ASSISTANT / ALEXA+ SIMULATION BATCH HANDLER =====================
-  function handleConfirmAssistantItems({ appointments = [], tasks = [] }) {
+  // ===================== ASSISTANT CREATION BATCH HANDLER =====================
+  function handleConfirmAssistantCreation({ appointments = [], tasks = [] }) {
     setData((prev) => {
+      const activities = [];
+
+      tasks.forEach((t) => {
+        activities.push(
+          createActivityEntry({
+            taskId: t.id,
+            taskTitle: t.title,
+            actionType: "creation",
+            actor: "Alexa+ Simulation (Local Heuristic)",
+            description: `Created task ${t.id}: "${t.title}" (assigned to ${t.assignee})`,
+            changes: []
+          })
+        );
+      });
+
+      appointments.forEach((a) => {
+        activities.push(
+          createActivityEntry({
+            taskId: null,
+            taskTitle: a.title,
+            actionType: "appointment",
+            actor: "Alexa+ Simulation (Local Heuristic)",
+            description: `Scheduled appointment: "${a.title}" for ${a.recipient} on ${a.date}`,
+            changes: []
+          })
+        );
+      });
+
       return {
         ...prev,
         appointments: [...appointments, ...prev.appointments],
-        tasks: [...tasks, ...prev.tasks]
+        tasks: [...tasks, ...prev.tasks],
+        activityLog: [...activities, ...(prev.activityLog || [])].slice(0, 50)
       };
     });
+
     showToast(
       `Saved ${appointments.length} appointment(s) and ${tasks.length} task(s) via Assistant!`,
       "success"
@@ -185,12 +349,24 @@ export default function App() {
 
   // ===================== FAMILY MEMBER HANDLER =====================
   function handleAddMember(newMember) {
-    setData((prev) => ({
-      ...prev,
-      members: [...prev.members, newMember]
-    }));
+    setData((prev) => {
+      const activityItem = createActivityEntry({
+        taskId: null,
+        taskTitle: newMember.name,
+        actionType: "creation",
+        actor: "Care Coordinator",
+        description: `Added caregiver ${newMember.name} (${newMember.role}) to Care Circle`,
+        changes: []
+      });
+
+      return {
+        ...prev,
+        members: [...prev.members, newMember],
+        activityLog: [activityItem, ...(prev.activityLog || [])].slice(0, 50)
+      };
+    });
+
     showToast(`Added ${newMember.name} to the Care Circle!`);
-    addActivity(`Added ${newMember.name} (${newMember.role}) to family care circle`, "family");
   }
 
   // ===================== RESET DEMO HANDLER =====================
@@ -199,7 +375,7 @@ export default function App() {
       isOpen: true,
       title: "Reset Sample Demo Data?",
       message:
-        "This will restore all pre-populated family care tasks, appointments, and care circle members to their original demo state.",
+        "This will restore all pre-populated family care tasks, stable IDs (TASK-101 to TASK-105), appointments, and activity history to their default clean state.",
       confirmText: "Reset to Demo Data",
       isDanger: false,
       onConfirm: () => {
@@ -230,6 +406,7 @@ export default function App() {
           setTaskToEdit(null);
           setIsTaskModalOpen(true);
         }}
+        onOpenHistoryClick={() => setIsHistoryModalOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -251,6 +428,7 @@ export default function App() {
               setIsAptModalOpen(true);
             }}
             onToggleTaskComplete={handleToggleTaskComplete}
+            onOpenHistoryModal={() => setIsHistoryModalOpen(true)}
           />
         )}
 
@@ -268,6 +446,7 @@ export default function App() {
               setTaskToEdit(null);
               setIsTaskModalOpen(true);
             }}
+            onOpenHistoryModal={() => setIsHistoryModalOpen(true)}
           />
         )}
 
@@ -299,11 +478,13 @@ export default function App() {
         {activeTab === "assistant" && (
           <AlexaAssistant
             members={data.members}
-            onConfirmItems={handleConfirmAssistantItems}
+            existingTasks={data.tasks}
+            onConfirmItems={handleConfirmAssistantCreation}
+            onUpdateTask={handleUpdateTaskFromAssistant}
             onAddActivity={(act) => {
               setData((prev) => ({
                 ...prev,
-                activityLog: [act, ...(prev.activityLog || [])].slice(0, 20)
+                activityLog: [act, ...(prev.activityLog || [])].slice(0, 50)
               }));
             }}
           />
@@ -333,6 +514,13 @@ export default function App() {
         appointmentToEdit={aptToEdit}
         members={data.members}
         recipientName={data.recipient?.name || "Dad (Robert Jenkins)"}
+      />
+
+      {/* Activity History Audit Modal */}
+      <ActivityHistoryModal
+        isOpen={isHistoryModalOpen}
+        onClose={() => setIsHistoryModalOpen(false)}
+        activityLog={data.activityLog || []}
       />
 
       {/* Confirm Deletion / Reset Dialog */}

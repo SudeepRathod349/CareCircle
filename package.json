@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "node verify-app.mjs",
+    "test": "node verify-app.mjs && node verify-contextual-workflow.mjs",
     "lint": "oxlint",
     "preview": "vite preview"
   },

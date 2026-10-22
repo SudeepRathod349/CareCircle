@@ -75,7 +75,7 @@ export default function TaskModal({
 
     onSave({
       ...(taskToEdit || {}),
-      id: taskToEdit ? taskToEdit.id : `task-${Date.now()}`,
+      id: taskToEdit?.id || undefined,
       title: formData.title.trim(),
       description: formData.description.trim(),
       dueDate: formData.dueDate,
