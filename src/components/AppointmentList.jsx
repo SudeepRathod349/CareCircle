@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import {
   Calendar,
-  Clock,
   MapPin,
   Stethoscope,
   Plus,
@@ -9,8 +8,7 @@ import {
   Car,
   Edit2,
   Trash2,
-  CheckCircle,
-  AlertCircle
+  CheckCircle
 } from "lucide-react";
 
 export default function AppointmentList({
@@ -124,6 +122,17 @@ export default function AppointmentList({
 
                     {/* Actions */}
                     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      {onToggleStatus && (
+                        <button
+                          type="button"
+                          className="btn-icon-only"
+                          onClick={() => onToggleStatus(apt.id)}
+                          title={isCompleted ? "Mark as upcoming" : "Mark as completed"}
+                          aria-label={isCompleted ? `Mark ${apt.title} as upcoming` : `Mark ${apt.title} as completed`}
+                        >
+                          <CheckCircle size={16} color={isCompleted ? "var(--primary)" : "var(--text-subtle)"} />
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="btn-icon-only"

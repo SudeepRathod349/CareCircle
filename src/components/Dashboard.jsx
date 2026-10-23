@@ -4,16 +4,13 @@ import {
   CheckCircle2,
   Clock,
   AlertTriangle,
-  User,
   Users,
   Heart,
   Shield,
   Plus,
   Sparkles,
   ArrowRight,
-  Stethoscope,
-  Car,
-  Bell
+  Stethoscope
 } from "lucide-react";
 
 export default function Dashboard({
@@ -257,13 +254,27 @@ export default function Dashboard({
                 <Calendar size={18} color="var(--primary)" />
                 <span>Upcoming Visits</span>
               </h2>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => onNavigateTab("appointments")}
-              >
-                <span>All</span>
-              </button>
+              <div style={{ display: "flex", gap: 6 }}>
+                {onOpenCreateAppointment && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    style={{ padding: "4px 8px", fontSize: "0.75rem" }}
+                    onClick={onOpenCreateAppointment}
+                    title="Schedule new appointment"
+                  >
+                    <Plus size={13} />
+                    <span>Schedule</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => onNavigateTab("appointments")}
+                >
+                  <span>All</span>
+                </button>
+              </div>
             </div>
 
             {upcomingAppointments.length > 0 ? (

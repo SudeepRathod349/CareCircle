@@ -353,7 +353,7 @@ export function parseAssistantRequest(
       engine: "local_demo_heuristic",
       engineNotice: LOCAL_ENGINE_NOTICE,
       message:
-        "Please enter or speak a caregiving instruction. For example: 'Create a reminder for Dad\'s appointment tomorrow at 5 PM and assign arranging transport to Priya.'"
+        "Please enter or speak a caregiving instruction. For example: 'Create a reminder for Dad's appointment tomorrow at 5 PM and assign arranging transport to Priya.'"
     };
   }
 

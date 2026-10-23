@@ -271,6 +271,40 @@ export default function App() {
     setAptToEdit(null);
   }
 
+  function handleToggleAppointmentStatus(aptId) {
+    setData((prev) => {
+      const apt = prev.appointments.find((a) => a.id === aptId);
+      if (!apt) return prev;
+
+      const nextStatus = apt.status === "Completed" ? "Upcoming" : "Completed";
+      const updatedApts = prev.appointments.map((a) =>
+        a.id === aptId ? { ...a, status: nextStatus, updatedAt: new Date().toISOString() } : a
+      );
+
+      const msg =
+        nextStatus === "Completed"
+          ? `Completed appointment: "${apt.title}"`
+          : `Marked appointment as upcoming: "${apt.title}"`;
+
+      showToast(msg, nextStatus === "Completed" ? "success" : "info");
+
+      const activityItem = createActivityEntry({
+        taskId: null,
+        taskTitle: apt.title,
+        actionType: "appointment",
+        actor: "Caregiver",
+        description: msg,
+        changes: [{ field: "status", fieldName: "Status", originalValue: apt.status, proposedValue: nextStatus }]
+      });
+
+      return {
+        ...prev,
+        appointments: updatedApts,
+        activityLog: [activityItem, ...(prev.activityLog || [])].slice(0, 50)
+      };
+    });
+  }
+
   function handleDeleteAppointment(aptId, aptTitle) {
     setConfirmDialog({
       isOpen: true,
@@ -459,6 +493,7 @@ export default function App() {
               setIsAptModalOpen(true);
             }}
             onDeleteAppointment={handleDeleteAppointment}
+            onToggleStatus={handleToggleAppointmentStatus}
             onOpenCreateModal={() => {
               setAptToEdit(null);
               setIsAptModalOpen(true);
